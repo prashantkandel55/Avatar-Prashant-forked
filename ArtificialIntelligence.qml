@@ -45,6 +45,10 @@ Rectangle {
     property string rfMaxFeatures: "auto"     // auto|sqrt|log2
     property string rfCriterion: "gini"       // gini|entropy
 
+    // GaussianNB params (UI state only for now)
+    property real   gnVarSmoothing: 1e-9      // Default: 1e-9, Range: 1e-12 to 1e-1
+    property string gnPriors: "None"          // None|Uniform|Data-driven
+
     // Derived
     property bool paramsEnabled: mode === "Train"
 
@@ -146,7 +150,7 @@ Rectangle {
                                                          Math.min(root.height * 0.08, 90))
                                 radius: 8
                                 color: "#2d7a4a"
-                                border.color: currentModel === "GaussianNB" ? "#439566" : "#2d7a4a"
+                                border.color: currentModel === "GaussianNB" ? "yellow" : "#2d7a4a"
                                 border.width: currentModel === "GaussianNB" ? 3 : 1
 
                                 Text {
@@ -802,6 +806,60 @@ Rectangle {
                                 model: ["gini", "entropy"]
                                 currentIndex: Math.max(0, model.indexOf(rfCriterion))
                                 onCurrentTextChanged: rfCriterion = currentText
+                                Layout.fillWidth: true
+                            }
+                        }
+                    }
+
+                    // GAUSSIAN NAIVE BAYES PARAMS ----------------------------
+                    ColumnLayout {
+                        visible: currentModel === "GaussianNB"
+                        spacing: 6
+                        Layout.fillWidth: true
+
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 4
+                            Text {
+                                text: "var_smoothing:"
+                                color: "white"
+                                Layout.preferredWidth: 120
+                                font.pixelSize: Math.max(10, Math.min(16, root.height * 0.02))
+                            }
+                            TextField {
+                                text: gnVarSmoothing.toExponential(12)
+                                placeholderText: "1e-9"
+                                onEditingFinished: {
+                                    var v = parseFloat(text)
+                                    if (!isNaN(v) && v >= 1e-12 && v <= 1e-1) {
+                                        gnVarSmoothing = v
+                                        text = gnVarSmoothing.toExponential(12)
+                                        backend.updateGaussianNBParams(gnVarSmoothing, gnPriors)
+                                        logToConsole("Var Smoothing set to " + gnVarSmoothing.toExponential(12))
+                                    } else {
+                                        text = gnVarSmoothing.toExponential(12)
+                                        logToConsole("Invalid var_smoothing value. Range: 1e-12 to 1e-1")
+                                    }
+                                }
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 4
+                            Text {
+                                text: "priors:"
+                                color: "white"
+                                Layout.preferredWidth: 120
+                                font.pixelSize: Math.max(10, Math.min(16, root.height * 0.02))
+                            }
+                            ComboBox {
+                                model: ["None", "Uniform", "Data-driven"]
+                                currentIndex: Math.max(0, model.indexOf(gnPriors))
+                                onCurrentTextChanged: {
+                                    gnPriors = currentText
+                                    backend.updateGaussianNBParams(gnVarSmoothing, gnPriors)
+                                    logToConsole("Priors set to " + gnPriors)
+                                }
                                 Layout.fillWidth: true
                             }
                         }

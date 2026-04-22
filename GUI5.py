@@ -123,6 +123,10 @@ class BrainwavesBackend(QObject):
         self.current_dataset = "refresh"  # Default dataset to display
         self.connected = False
         self.drone_lock = threading.RLock()  # <-- reentrant lock avoids deadlock
+        
+        # GaussianNB parameters
+        self.gaussiannb_var_smoothing = 1e-9
+        self.gaussiannb_priors = "None"
 
         # This timer instance will fire off the parameterized method each timer fire
         self.hover_timer = QTimer()
@@ -234,6 +238,28 @@ class BrainwavesBackend(QObject):
         self.current_framework = framework_name
         self.flight_log.insert(0, f"Selected Framework: {framework_name}")
         self.flightLogUpdated.emit(self.flight_log)
+
+    @Slot(float, str)
+    def updateGaussianNBParams(self, var_smoothing, priors):
+        """ Update GaussianNB parameters from UI """
+        self.gaussiannb_var_smoothing = var_smoothing
+        self.gaussiannb_priors = priors
+        self.logMessage.emit(f"GaussianNB parameters updated: var_smoothing={var_smoothing:.2e}, priors={priors}")
+        self.flight_log.insert(0, f"GaussianNB params: var_smoothing={var_smoothing:.2e}, priors={priors}")
+        self.flightLogUpdated.emit(self.flight_log)
+
+    def _get_gaussiannb_priors_tensor(self, num_classes=6):
+        """ Convert priors selection to tensor for GaussianNB model """
+        if self.gaussiannb_priors == "None":
+            return None
+        elif self.gaussiannb_priors == "Uniform":
+            # Equal priors for all classes
+            return torch.ones(num_classes) / num_classes
+        elif self.gaussiannb_priors == "Data-driven":
+            # This would be calculated from training data during fit
+            return None
+        else:
+            return None
 
     @Slot()
     def readMyMind(self):
@@ -358,7 +384,8 @@ class BrainwavesBackend(QObject):
                 checkpoint = torch.load(model_path)
                 model = GaussianNB(
                     num_features=checkpoint['num_features'],
-                    num_classes=checkpoint['num_classes']
+                    num_classes=checkpoint['num_classes'],
+                    var_smoothing=self.gaussiannb_var_smoothing
                 )
                 model.load_state_dict(checkpoint['model_state_dict'])
                 

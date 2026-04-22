@@ -20,18 +20,21 @@ class GaussianNB(nn.Module):
     from the training data.
     """
     
-    def __init__(self, num_features, num_classes):
+    def __init__(self, num_features, num_classes, var_smoothing=1e-9):
         """
         Initialize the GaussianNB model.
         
         Args:
             num_features (int): Number of input features (e.g., 32 for EEG channels)
             num_classes (int): Number of output classes (e.g., 6 for drone commands)
+            var_smoothing (float): Portion of the largest variance of all features 
+                                 that is added to variances for calculation stability
         """
         super(GaussianNB, self).__init__()
         
         self.num_features = num_features
         self.num_classes = num_classes
+        self.var_smoothing = var_smoothing
         
         # Register buffers (non-trainable parameters)
         # These will store the calculated statistics
@@ -40,7 +43,7 @@ class GaussianNB(nn.Module):
         self.register_buffer('variances', torch.zeros(num_classes, num_features))
         self.register_buffer('is_fitted', torch.tensor(False))
         
-    def fit(self, X, y):
+    def fit(self, X, y, priors=None):
         """
         Fit the Gaussian Naive Bayes model.
         
@@ -49,6 +52,7 @@ class GaussianNB(nn.Module):
         Args:
             X (torch.Tensor): Training data of shape (n_samples, n_features)
             y (torch.Tensor): Target labels of shape (n_samples,)
+            priors (torch.Tensor or None): Prior probabilities for each class
         """
         # Ensure tensors are on the same device as the model
         X = X.to(self.means.device)
@@ -56,21 +60,32 @@ class GaussianNB(nn.Module):
         
         n_samples = X.shape[0]
         
-        # Calculate class priors P(y)
+        # Handle priors
+        if priors is not None:
+            # Use custom priors
+            priors = priors.to(self.means.device).float()
+            if len(priors) != self.num_classes:
+                raise ValueError(f"Length of priors ({len(priors)}) must match number of classes ({self.num_classes})")
+            # Normalize priors to sum to 1
+            self.class_priors = priors / priors.sum()
+        else:
+            # Calculate class priors P(y) from data
+            for c in range(self.num_classes):
+                class_mask = (y == c)
+                self.class_priors[c] = class_mask.sum().float() / n_samples
+        
+        # Calculate means and variances for each class
         for c in range(self.num_classes):
             class_mask = (y == c)
-            self.class_priors[c] = class_mask.sum().float() / n_samples
-            
-            # Get samples for this class
             X_c = X[class_mask]
             
             if len(X_c) > 0:
-                # Calculate mean μ for each feature
+                # Calculate mean for each feature
                 self.means[c] = X_c.mean(dim=0)
                 
-                # Calculate variance σ² for each feature
-                # Add small epsilon to avoid division by zero
-                self.variances[c] = X_c.var(dim=0) + 1e-9
+                # Calculate variance for each feature
+                # Add var_smoothing to avoid division by zero
+                self.variances[c] = X_c.var(dim=0) + self.var_smoothing
         
         self.is_fitted = torch.tensor(True)
         
